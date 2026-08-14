@@ -1,0 +1,21 @@
+[project]
+name = "stream-function-solve-adapt"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Anthony Ricciardi", email = "vtpasquale@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.5.2",
+    "pylibmeshb>=0.1.10",
+    "scipy>=1.18.0",
+]
+
+[project.scripts]
+stream-function-solve-adapt = "stream_function_solve_adapt:main"
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
