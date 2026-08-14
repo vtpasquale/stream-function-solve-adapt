@@ -12,3 +12,7 @@ wheels/
 # Mesh and solution files
 *.meshb
 *.solb
+*.out
+*.tec
+*.egads
+*.jrnl
