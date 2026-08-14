@@ -4,15 +4,20 @@ Created on Thu Aug 13 11:31:31 2026
 
 @author: aricciar
 """
+import os
+import time
 import subprocess
+import shutil
+import pandas as pd
+
 import numpy as np
 import stream_function_solve_adapt.TriMesh as tm
 import stream_function_solve_adapt.solve as sf
-
 import pyLibMeshb.libMeshb as lm
 
 
 def solve(project,adapt_step):
+    start_time = time.perf_counter() 
     mesh_file = f"{project}_{adapt_step}.meshb"
     alpha_rad = float( np.deg2rad(10.0) )
     
@@ -37,9 +42,11 @@ def solve(project,adapt_step):
                           "sol_at_vertices": {"values": np.column_stack([psi])} }
     lm.write(f"{project}_{adapt_step}.solb",solution_file_data)
     
-    return (Cl, c3, mesh.n_nodes)
+    run_time = time.perf_counter() - start_time
+    return (mesh.n_nodes, Cl, c3, run_time)
 
 def adapt(project, adapt_step, complexity):
+    start_time = time.perf_counter() 
     mesh_file = f"{project}_{adapt_step}.meshb"
     solution_file = f"{project}_{adapt_step}.solb"
     metric_file = f"{project}_{adapt_step}_metric.solb"
@@ -51,41 +58,108 @@ def adapt(project, adapt_step, complexity):
     multiscale_str = f"ref multiscale {mesh_file} {solution_file} {complexity} {metric_file} > multiscale_{adapt_step}.out"
     
     subprocess.run(
-        multiscale_str,       # command as a list of strings, not a single string
-        capture_output=True, # capture stdout/stderr
+        multiscale_str,
         shell=True,
-        check=True,          # raise CalledProcessError if the command fails
+        check=True,
     )
 
     # Adapt
     adapt_str = f"ref adapt {mesh_file} --egads {egads_file} --metric {metric_file} -x {adapted_mesh_file} > adapt_{adapt_step}.out"
     
     subprocess.run(
-        adapt_str,       # command as a list of strings, not a single string
-        capture_output=True, # capture stdout/stderr
+        adapt_str,
         shell=True,
-        check=True,          # raise CalledProcessError if the command fails
+        check=True,
     )
     
+    run_time = time.perf_counter() - start_time
+    return run_time
 
-#%%
+
+#%% main
 project = "naca0012"
 
-n_steps = 25
-complexity = 500
+start_cycle = -1
+n_total_cycles = 25
 
+start_complexity = 100
+complexity_modulus = 3 # cycles before doubling 
 
-cl = np.zeros(n_steps)
-c3 = np.zeros(n_steps)
-n_nodes = np.zeros(n_steps)
+columns = ["cycle", "nNodes", "complexity", "cl", "c3", "solve_time", "adapt_time"]
+path = "adapt_history.csv"
 
-for i in range(0,n_steps): 
+if start_cycle == 0:
+    # Copy CAD and initial mesh from geometry folder
+    shutil.copy(os.path.join("..","geometry",f"{project}_.egads"), f"{project}_.egads")
+    shutil.copy(os.path.join("..","geometry",f"{project}_-vol.meshb"), f"{project}_0.meshb")
     
-    if np.mod(i,5) == 0:
+    # Setup log table
+    df = pd.DataFrame(columns=columns)  
+    
+else:
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Could not find file: {path}")
+    df = pd.read_csv(path)
+
+# Figure out where to resume if start_cycle < 0
+if start_cycle < 0:
+    start_cycle = int(df["cycle"].max()) + 1
+
+# Set complexity
+if start_cycle == 0:
+    complexity = start_complexity
+else:
+    complexity = int(df["complexity"].max())
+    
+# Solve-Adapt cycle
+print("     cycle,    nNodes,        cl,        c3,      solve_time,      adapt_time")
+for cycle in range(start_cycle, n_total_cycles + 1):
+    
+    # Increment complexity
+    if np.mod(cycle,complexity_modulus) == 0:
         complexity = complexity*2
 
-    cl[i], c3[i], n_nodes[i] = solve(project,i)
-    adapt(project,i,complexity)
+    # Solve and adapt
+    n_nodes, cl, c3, solve_time = solve(project,cycle)
+    adapt_time = adapt(project,cycle,complexity)
+    
+    # Logging
+    new_row = {
+        "cycle": cycle,
+        "nNodes": n_nodes,
+        "complexity": complexity,
+        "cl": cl,
+        "c3": c3,
+        "solve_time": solve_time,
+        "adapt_time": adapt_time,
+    }
+    df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+    df.to_csv(path, index=False)   # save after every cycle
+    
+    line = f"{cycle:10d},{n_nodes:10d},{cl:10.3f},{c3:10.3f},{solve_time:16.3f},{adapt_time:16.3f}"
+    print(line)
+    
+    
+
+# n_steps = 30
+# complexity = 100
+
+# header = "     cycle,    nNodes,        cl,        c3,      solve_time,      adapt_time"
+# with open(f"{project}.log","w") as table_fid:
+#     print(header)
+#     print(header,file=table_fid)
+
+#     for i in range(0,n_steps): 
+        
+#         if np.mod(i,6) == 0:
+#             complexity = complexity*2
+        
+
+        
+#         # log result
+#         line = f"{i:10d},{n_nodes:10d},{cl:10.3f},{c3:10.3f},{solve_time:16.3f},{adapt_time:16.3f}"
+#         print(line)
+#         print(line,file=table_fid)
 
 
 

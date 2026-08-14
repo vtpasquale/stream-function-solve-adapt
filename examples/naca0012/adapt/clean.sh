@@ -1,0 +1,1 @@
+rm -rvf *.meshb *.solb *.out *.log *.egads

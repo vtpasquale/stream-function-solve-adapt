@@ -11,6 +11,7 @@ wheels/
 
 # Mesh and solution files
 *.meshb
+*.mapbc
 *.solb
 *.out
 *.tec
