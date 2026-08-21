@@ -14,5 +14,6 @@ data = pd.read_csv("adapt_history.csv", index_col=False)
 data.columns = data.columns.str.strip()
 
 plt.figure(1)
-plt.semilogx(data.nNodes, data.cl,'-o')
+plt.semilogx(data.nNodes, data.cl,'-o', 
+             data.nNodes, data.clp,'.-')
 

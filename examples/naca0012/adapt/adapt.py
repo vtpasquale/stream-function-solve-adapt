@@ -24,6 +24,9 @@ def solve(project,adapt_step):
     # Read mesh and update edge ids
     mesh = tm.TriMesh.from_file(mesh_file)
     
+    # Fix node ordering for positive element areas
+    mesh.triangles = mesh.triangles[:, ::-1] 
+    
     # Update edge ids
     airfoil_edge_id = 0
     farfield_edge_id= 1
@@ -31,11 +34,15 @@ def solve(project,adapt_step):
     mesh.edge_ids[mesh.edge_ids==3] = airfoil_edge_id
     mesh.edge_ids[mesh.edge_ids==4] = airfoil_edge_id
     
+    # Reverse edge order at airfoil so circulation integral is counterclockwise
+    mesh.edges = mesh.edges[:, ::-1] 
+    
+    # Solve
     streamFunctionSolver = sf.StreamFunctionSolver(mesh, airfoil_edge_id, farfield_edge_id)
     psi, c3, info = streamFunctionSolver.solve(alpha = alpha_rad)
     
     Cl, _, _ = streamFunctionSolver.lift_coefficient_from_circulation(psi, 1.0, 1.0)
-    
+    _, Clp, _ = streamFunctionSolver.force_coefficients(psi, 1.0)
     
     # write output
     solution_file_data = {"version": 3, "dim": 2, 
@@ -43,7 +50,7 @@ def solve(project,adapt_step):
     lm.write(f"{project}_{adapt_step}.solb",solution_file_data)
     
     run_time = time.perf_counter() - start_time
-    return (mesh.n_nodes, Cl, c3, run_time)
+    return (mesh.n_nodes, Cl, Clp, c3, run_time)
 
 def adapt(project, adapt_step, complexity):
     start_time = time.perf_counter() 
@@ -79,13 +86,13 @@ def adapt(project, adapt_step, complexity):
 #%% main
 project = "naca0012"
 
-start_cycle = -1
-n_total_cycles = 25
+start_cycle = 0
+n_total_cycles = 15
 
 start_complexity = 100
 complexity_modulus = 3 # cycles before doubling 
 
-columns = ["cycle", "nNodes", "complexity", "cl", "c3", "solve_time", "adapt_time"]
+columns = ["cycle", "nNodes", "complexity", "cl", "clp", "c3", "solve_time", "adapt_time"]
 path = "adapt_history.csv"
 
 if start_cycle == 0:
@@ -112,7 +119,7 @@ else:
     complexity = int(df["complexity"].max())
     
 # Solve-Adapt cycle
-print("     cycle,    nNodes,        cl,        c3,      solve_time,      adapt_time")
+print("     cycle,    nNodes,        cl,       clp,        c3,      solve_time,      adapt_time")
 for cycle in range(start_cycle, n_total_cycles + 1):
     
     # Increment complexity
@@ -120,7 +127,7 @@ for cycle in range(start_cycle, n_total_cycles + 1):
         complexity = complexity*2
 
     # Solve and adapt
-    n_nodes, cl, c3, solve_time = solve(project,cycle)
+    n_nodes, cl, clp, c3, solve_time = solve(project,cycle)
     adapt_time = adapt(project,cycle,complexity)
     
     # Logging
@@ -129,6 +136,7 @@ for cycle in range(start_cycle, n_total_cycles + 1):
         "nNodes": n_nodes,
         "complexity": complexity,
         "cl": cl,
+        "clp": clp,
         "c3": c3,
         "solve_time": solve_time,
         "adapt_time": adapt_time,
@@ -136,7 +144,7 @@ for cycle in range(start_cycle, n_total_cycles + 1):
     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
     df.to_csv(path, index=False)   # save after every cycle
     
-    line = f"{cycle:10d},{n_nodes:10d},{cl:10.3f},{c3:10.3f},{solve_time:16.3f},{adapt_time:16.3f}"
+    line = f"{cycle:10d},{n_nodes:10d},{cl:10.3f},{clp:10.3f},{c3:10.3f},{solve_time:16.3f},{adapt_time:16.3f}"
     print(line)
     
     
