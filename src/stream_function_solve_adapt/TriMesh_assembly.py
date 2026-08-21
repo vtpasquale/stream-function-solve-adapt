@@ -18,9 +18,9 @@ automatically -- that summation *is* the FEM assembly step, so no manual
 scatter-add loop is required for the matrices.
 """
 
-from dataclasses import dataclass
 import numpy as np
 from scipy import sparse
+from scipy.sparse.linalg import splu
 
 from stream_function_solve_adapt.TriMesh import TriMesh 
 
@@ -256,6 +256,24 @@ def compute_hessian(mesh: TriMesh, phi, lumped=False):
     """
     Hxx_op, Hxy_op, Hyy_op = hessian_projection_operators(mesh, lumped=lumped)
     Hxx, Hxy, Hyy = Hxx_op @ phi, Hxy_op @ phi, Hyy_op @ phi
+    return np.column_stack([Hxx, Hyy, Hxy])
+
+def compute_hessian_fast(mesh: TriMesh, phi, lumped=False):
+    
+    area, dNdx, dNdy = triangle_geometry(mesh)
+    Cx, Cy = gradient_coupling_matrices(mesh, area, dNdx, dNdy)
+    
+    if lumped:
+        M = lumped_mass_matrix(mesh, area)
+    else:
+        M = consistent_mass_matrix(mesh, area)
+
+    lu = splu(M.tocsc()) # one sparse LU factorization, reused for every solve
+    gx = lu.solve(Cx @ phi)        # grad_x, via a sparse matvec + one triangular solve
+    gy = lu.solve(Cy @ phi)        # grad_y
+    Hxx = lu.solve(Cx @ gx)         # second derivative, same pattern applied to gx
+    Hyy = lu.solve(Cy @ gy)
+    Hxy = 0.5 * (lu.solve(Cx @ gy) + lu.solve(Cy @ gx))
     return np.column_stack([Hxx, Hyy, Hxy])
 
 
